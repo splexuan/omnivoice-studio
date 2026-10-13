@@ -1,13 +1,37 @@
 # -*- coding: utf-8 -*-
-"""复制可重定位运行时：便携 Python（排除旧 torch）+ cu128 torch 家族真实文件。"""
-import subprocess, sys, shutil
+"""复制可重定位运行时：便携 Python（排除旧 torch）+ 目标 torch 家族真实文件。
+
+三个路径都可以用环境变量覆盖，换机不必改代码：
+
+===============  ==========================================================
+``OV_SRC_PY``    便携 Python 运行时根目录（要含 ``Lib/site-packages``）
+``OV_DEST``      整合包输出根目录（会往里建 ``runtime/``）
+``OV_TORCH_SP``  提供目标 torch 家族真实文件的 site-packages
+                 （一般是本机已装好 cuXXX torch 的那个环境的 ``Lib/site-packages``）
+===============  ==========================================================
+
+例（PowerShell）::
+
+    $env:OV_SRC_PY="D:\py\portable"; $env:OV_TORCH_SP="D:\py\lux\Lib\site-packages"
+    .venv\Scripts\python.exe packaging\copy_runtime.py
+"""
+import os
+import subprocess
 from pathlib import Path
 
-SRC   = Path(r"E:\OmniVoice\OmniVoice-v260717\walkingwithai")
-DEST  = Path(r"E:\OmniVoice\dist\OmniVoice-Studio\runtime")
+SRC   = Path(os.environ.get("OV_SRC_PY", r"E:\OmniVoice\OmniVoice-v260717\walkingwithai"))
+DEST  = Path(os.environ.get("OV_DEST", r"E:\OmniVoice\dist\OmniVoice-Studio")) / "runtime"
 SP    = SRC / "Lib" / "site-packages"
-DP    = Path(r"D:\python_www\LuxTTS\python\Lib\site-packages")
+DP    = Path(os.environ.get("OV_TORCH_SP", r"D:\python_www\LuxTTS\python\Lib\site-packages"))
 DSTSP = DEST / "Lib" / "site-packages"
+
+# 预检：路径不通就别往下跑，直接说清该设哪个环境变量
+_bad = [(k, p) for k, p in (("OV_SRC_PY", SRC), ("OV_TORCH_SP", DP)) if not p.exists()]
+if _bad:
+    print("以下路径不存在，请用环境变量指定后重试：")
+    for k, p in _bad:
+        print(f"  {k} = {p}")
+    raise SystemExit(1)
 
 EXCLUDE = [
     # 关键：排除原包自带的旧版 omnivoice（0.1.2 源码），否则会遮蔽我们装入的 0.2.1

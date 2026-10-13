@@ -1,13 +1,41 @@
 # -*- coding: utf-8 -*-
-"""组装整合包：源码 + 工具代码 + 权重 + 可重定位导入 + 启动器。"""
-import subprocess, shutil
+"""组装整合包：源码 + 工具代码 + 权重 + 可重定位导入 + 启动器。
+
+路径默认从本脚本位置推导，换机一般无需改；也可用环境变量覆盖：
+
+===============  ==========================================================
+``OV_STUDIO``    开发态仓库根目录（默认 = 本脚本上一级）
+``OV_DEST``      整合包输出目录（默认 = 仓库同级的 ``dist/OmniVoice-Studio``）
+``OV_WEIGHTS``   权重来源目录，需含 ``OmniVoice/`` 与 ``sensevoice-small/``
+                 （默认 = 仓库内 ``checkpoints/``）
+``OV_STAGE``     启动器与说明的来源目录（默认 = 本目录 ``packaging/``）
+===============  ==========================================================
+"""
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
-BUNDLE = Path(r"E:\OmniVoice\dist\OmniVoice-Studio")
-STUDIO = Path(r"E:\OmniVoice\omnivoice-studio")
-SRCPKG = Path(r"E:\OmniVoice\OmniVoice-v260717")
-STAGE  = Path(r"E:\OmniVoice\_pkg")
+_here = Path(__file__).resolve().parent          # packaging/
+STUDIO = Path(os.environ.get("OV_STUDIO", _here.parent))
+BUNDLE = Path(os.environ.get("OV_DEST", STUDIO.parent / "dist" / "OmniVoice-Studio"))
+WEIGHTS = Path(os.environ.get("OV_WEIGHTS", STUDIO / "checkpoints"))
+STAGE  = Path(os.environ.get("OV_STAGE", _here))
 SP     = BUNDLE / "runtime" / "Lib" / "site-packages"
+
+# 预检：缺什么就说清缺什么，别让 robocopy 静默失败
+_missing = [("源码 OmniVoice/", STUDIO / "OmniVoice"),
+            ("权重目录", WEIGHTS),
+            ("启动器/说明", STAGE / "启动程序.bat"),
+            ("运行时 runtime/", BUNDLE / "runtime")]
+_bad = [(k, p) for k, p in _missing if not p.exists()]
+if _bad:
+    print("以下输入缺失，无法组装：")
+    for k, p in _bad:
+        print(f"  {k}: {p}")
+    print("\n提示：runtime/ 需要先跑 packaging/copy_runtime.py；"
+          "权重下载见 app/config.py 说明或 setup.bat。")
+    raise SystemExit(1)
 
 def run(args, label):
     r = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -50,11 +78,12 @@ pth = SP/"_omnivoice_bundle.pth"
 pth.write_text("../../../OmniVoice\n", encoding="utf-8")
 print(f"[OK  ] 写入 {pth.name} -> ../../../OmniVoice")
 
-# 6) 权重
-run(robocopy(SRCPKG/"checkpoints"/"OmniVoice",
+# 6) 权重：主模型 + 转写模型。转写只有 SenseVoice 一条路径，
+#    不再有 whisper-large-v3-turbo（省 1.6 GB）。
+run(robocopy(WEIGHTS/"OmniVoice",
              BUNDLE/"checkpoints"/"OmniVoice"), "权重 OmniVoice/")
-run(robocopy(SRCPKG/"checkpoints"/"whisper-large-v3-turbo",
-             BUNDLE/"checkpoints"/"whisper-large-v3-turbo"), "权重 whisper/")
+run(robocopy(WEIGHTS/"sensevoice-small",
+             BUNDLE/"checkpoints"/"sensevoice-small"), "权重 sensevoice/")
 
 # 7) 启动器与说明
 for f in ["启动程序.bat", "使用说明.md"]:

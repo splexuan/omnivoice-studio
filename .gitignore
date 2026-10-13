@@ -10,6 +10,10 @@ OmniVoice/
 # ---- 生成物 / 个人数据 ----
 outputs/
 voices/
+web/_uploads/
+
+# ---- 模型权重（体积大，不入库）----
+checkpoints/
 
 # ---- 下载缓存（体积大）----
 wheels/*.whl
@@ -18,3 +22,10 @@ wheels/*.whl
 dist/
 *.zip
 *.7z
+
+# ---- Agent 工作目录（项目记忆、一次性脚本、临时文件）----
+.workbuddy/
+
+# ---- 界面验证截图：可随时重新生成，脚本本身照常入库 ----
+#      （design-review/tools/*.js 与 verify-web/*.js 是入库的）
+design-review/**/*.png
