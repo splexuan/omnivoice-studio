@@ -43,6 +43,33 @@ runtime\python.exe app\hardware.py     # 只看档位（设备/精度/步数是�
 runtime\python.exe app\smoke_test.py   # 端到端冒烟：加载权重 → 生成 wav
 ```
 
+### 换一台机器（clone 之后缺什么）
+
+仓库**只放源码**（43 个文件），运行环境与模型权重都在 `.gitignore` 里，所以 `git clone` 完**不能直接双击跑**：
+
+| 缺什么 | 大小 | 怎么补 |
+|---|---|---|
+| `runtime/` | 7.7 G | **`setup.bat` 自动补**（建 `.venv` + 装全部依赖） |
+| `OmniVoice/` | 小 | 同上，自动取上游源码 |
+| `checkpoints/` | 3.3 G | 同上，自动下载（走 hf-mirror） |
+| `voices/` | — | ⚠️ **个人资产，不会回来，必须手动拷**（音色样本 + `.pt` prompt 缓存） |
+| `outputs/` | — | ⚠️ 同上（`history.json` 合成记录 + 生成的 wav） |
+| `.workbuddy/` | — | ⚠️ 同上（项目记忆） |
+
+新机器上的顺序：
+
+```bash
+git clone https://github.com/splexuan/omnivoice-studio.git
+cd omnivoice-studio
+setup.bat      # 需先装 Python 3.12（或 pip install uv）；会下约 3.3 G 权重
+run_web.bat    # setup 建的是 .venv，run_web.bat 的查找顺序是 runtime/ → .venv/，能找到
+```
+
+> **上游源码钉在固定 commit 上。** `bootstrap.py` 的 `OMNIVOICE_REF` 写死了开发机在用的那个
+> commit（`08be0b4`，2026-10-14 当时的上游 HEAD，版本号仍是 0.2.1）。原先跟默认分支，
+> 上游一前进新机器就会拿到不同的代码 —— 本项目的 `app/`、`web/` 按这份代码的 API 写，
+> 对不上会莫名报错且难定位。想跟随官方发版就把它改成 tag `"0.2.1"`，想随时吃最新就改回 `"main"`。
+
 ---
 
 ## 目录结构
@@ -70,7 +97,7 @@ omnivoice-studio/
 │   ├── _fetch_torch.py 按驱动/平台自动选型并并发下载 torch
 │   └── _link_torch.py  复用本机已有 torch 的链接脚本（省下载）
 ├── checkpoints/        模型权重（体积大，不入库）
-├── OmniVoice/          官方源码（setup.bat 会自动 clone）
+├── OmniVoice/          官方源码（setup.bat 自动取，钉在固定 commit 上）
 ├── voices/             音色库（个人数据，不入库）
 ├── outputs/            合成结果（不入库）
 │   └── history.json    合成记录（新功能，随 outputs 一起清理即可）

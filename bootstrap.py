@@ -6,7 +6,8 @@
 2. 建 ``.venv``
 3. 装 torch 家族 —— 交给 ``wheels/_fetch_torch.py`` 按驱动自动选 CUDA 版本，
    选不出就装 CPU 版（没有 N 卡、驱动太老、或想纯 CPU 跑都能过）
-4. 装 omnivoice 及运行依赖（默认走国内镜像）
+4. 装 omnivoice 及运行依赖 —— 上游源码**钉在固定 commit** 上取（见 ``OMNIVOICE_REF``，
+   不跟默认分支，免得新机器拿到和开发机不同的代码），依赖默认走国内镜像
 5. 下模型权重到 ``checkpoints/``（默认走 hf-mirror）
 6. 跑 ``app/verify_env.py`` 自检，并打印本机适配档位
 
@@ -36,6 +37,15 @@ WEIGHTS = ROOT / "checkpoints"
 REPOS = {
     "k2-fsa/OmniVoice": "OmniVoice",
 }
+# 上游源码拧到哪个版本：**钉死，不跟默认分支**。
+# 原先这里是 `git clone --depth 1 <url>`（跟 HEAD），只要上游往前一走，新机器拿到的
+# 就不是同一份代码 —— 而本项目的 app/ 与 web/ 是按这份代码的 API 写的，对不上会莫名其妙报错，
+# 且很难看出是版本问题。所以钉死成一个确定的 ref。
+# 下面这串是 2026-10-14 开发机在用的 commit（== 当时上游 HEAD，版本号仍是 0.2.1；
+# 官方最新 tag 是 0.2.1 = 5ba967c，比它早几个提交）。
+# 想跟随官方发版就改成 tag：OMNIVOICE_REF = "0.2.1"；想随时吃最新就改回 "main"。
+OMNIVOICE_REPO = "https://github.com/k2-fsa/OmniVoice.git"
+OMNIVOICE_REF = "08be0b4ccbac3e13e374e86fbfead4b4cac343e2"
 # 参考音频转写：SenseVoice Small（sherpa-onnx，int8 约 0.24 GB，自带中文标点）。
 # 只取这两个文件 —— 整个仓库里还有 fp32 权重与测试音频，多下 1 GB 没必要。
 # 这里**不再**下载 Whisper：0.2.x 早期版本把它当兜底引擎，现已整体移除
@@ -143,13 +153,33 @@ def step_torch(vpy: Path, extra: list[str]) -> None:
         print(f"  {vpy} wheels\\_fetch_torch.py --cpu")
 
 
+def _clone_omnivoice(dst: Path) -> int:
+    """把上游源码取到 ``dst`` 并检出 ``OMNIVOICE_REF``。
+
+    不用 ``git clone --branch``：它只认分支名和 tag，**喂裸 sha 会直接失败**。
+    改成 init + fetch <ref> + checkout FETCH_HEAD，sha / tag / 分支名三种写法都能用。
+    检出后是 detached HEAD —— 这是故意的，就是要它钉住不动。
+    """
+    print(f"取上游源码 {OMNIVOICE_REF} -> {dst}")
+    for cmd in (
+        ["git", "init", "-q", str(dst)],
+        ["git", "-C", str(dst), "remote", "add", "origin", OMNIVOICE_REPO],
+        ["git", "-C", str(dst), "fetch", "-q", "--depth", "1", "origin", OMNIVOICE_REF],
+        ["git", "-C", str(dst), "checkout", "-q", "FETCH_HEAD"],
+    ):
+        if run(cmd) != 0:
+            print("取上游源码失败。可手工执行：")
+            print(f"  git clone {OMNIVOICE_REPO} OmniVoice")
+            print(f"  git -C OmniVoice checkout {OMNIVOICE_REF}")
+            return 1
+    return 0
+
+
 def step_deps(vpy: Path, mirror: str) -> None:
     log("4/6 安装 omnivoice 及其依赖")
     if not (ROOT / "OmniVoice" / "pyproject.toml").exists():
         if which("git"):
-            print("未找到上游源码，正在 clone k2-fsa/OmniVoice ...")
-            run(["git", "clone", "--depth", "1",
-                 "https://github.com/k2-fsa/OmniVoice.git", str(ROOT / "OmniVoice")])
+            _clone_omnivoice(ROOT / "OmniVoice")
         else:
             raise SystemExit("缺少 OmniVoice/ 源码目录，且没有 git 可用。请手动 clone 到 OmniVoice/")
     run(pip_cmd(vpy) + ["--index-url", mirror, *DEPS])
