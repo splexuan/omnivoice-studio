@@ -23,7 +23,7 @@ REF_TEXT = "你好，这是 OmniVoice 本地语音合成工具的测试。今天
 def main() -> int:
     if not REF.exists():
         print("缺少参考音频:", REF)
-        print("请先运行：.venv\\Scripts\\python.exe app\\smoke_test.py")
+        print("请先运行：runtime\\python.exe app\\smoke_test.py")
         return 1
 
     prof = config.profile()

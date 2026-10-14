@@ -1,6 +1,7 @@
 """OmniVoice Studio — WebUI（FastAPI + 自研前端）。
 
-这是 Gradio 版（app/app.py）的替代实现。换掉 Gradio 的目的只有一个：
+本文件是**唯一的界面实现**。早先用 Gradio 写过一版（带 build_ui()，放在 app/app.py 里），
+已于 2026-10-14 连同 run.bat 一起移除 —— 换掉它的原因只有一个：
 **把界面完全握在自己手里**。Gradio 会在组件标签、主题变量、DOM 结构上
 反复和你抢控制权（哈希类名随版本变、注入 CSS 的选择器被重写），
 想让每个细节都到位，成本比自研更高。
@@ -9,7 +10,7 @@
   · 模型调用与音色库读写 —— 直接复用 app/app.py 的**模块级函数**，不重复实现
     （load_model / synthesize / list_voices / load_voice_meta / _to_instruct …）
   · 界面与交互 —— 全部由 web/static/index.html 自持
-本文件不修改 app/app.py，两套界面可并存对比。
+本文件不修改 app/app.py（它现在只剩生成核心，不含任何界面代码）。
 
 接口：
     GET  /api/bootstrap                    运行环境 + 语种/属性 + 音色列表 + 裁剪建议
@@ -28,7 +29,7 @@
     GET  /media/{out|upload|voice}/{name}  音频回放
 
 启动：
-    .venv\\Scripts\\python.exe web\\server.py
+    runtime\\python.exe web\\server.py
     或  run_web.bat
 """
 
@@ -707,5 +708,5 @@ app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    print("OmniVoice Studio (WebUI)  →  http://127.0.0.1:7866")
-    uvicorn.run(app, host=config.HOST, port=7866, log_level="info")
+    print(f"OmniVoice Studio (WebUI)  →  http://{config.HOST}:{config.PORT}")
+    uvicorn.run(app, host=config.HOST, port=config.PORT, log_level="info")

@@ -1,22 +1,23 @@
 @echo off
-chcp 65001 >nul
+rem ±¾ÎÄ¼þ±ØÐëÊÇ GBK ±àÂë + CRLF »»ÐÐ£¬ÇÒ¡¾²»Òª chcp 65001¡¿¡ª¡ª
+rem Êµ²â£ºUTF-8 + chcp »áÈÃ cmd °ÑÖÐÎÄÐÐ´Ó°ë½Ø½Ø¶Ï£¬±¨ not recognized¡£
 cd /d "%~dp0"
 
-rem ---- å›½å†…çŽ¯å¢ƒï¼šHuggingFace èµ°é•œåƒï¼ˆä»…å½“éœ€è¦è”ç½‘ä¸‹è½½æ—¶æ‰ç”Ÿæ•ˆï¼‰----
+rem ---- ¹úÄÚ»·¾³£ºHuggingFace ×ß¾µÏñ£¨½öµ±ÐèÒªÁªÍøÏÂÔØÊ±²ÅÉúÐ§£©----
 set "HF_ENDPOINT=https://hf-mirror.com"
 
 echo ============================================
-echo   OmniVoice Studio - ä¸€é”®çŽ¯å¢ƒæ­å»º
-echo   è‡ªåŠ¨è¯†åˆ«æ˜¾å¡ï¼Œè£…å¯¹åº”ç‰ˆæœ¬çš„ torch
+echo   OmniVoice Studio - Ò»¼ü»·¾³´î½¨
+echo   ×Ô¶¯Ê¶±ðÏÔ¿¨£¬×°¶ÔÓ¦°æ±¾µÄ torch
 echo ============================================
 echo.
 
 where py >nul 2>nul && goto :usepy
 where python >nul 2>nul && goto :usepy2
 
-echo [é”™è¯¯] æ²¡æ‰¾åˆ° Pythonã€‚
-echo   è¯·å…ˆå®‰è£… Python 3.12ï¼ˆhttps://www.python.org/downloads/ ï¼‰ï¼Œ
-echo   æˆ–æ‰§è¡Œ "pip install uv" åŽé‡è¯•ã€‚
+echo [´íÎó] Ã»ÕÒµ½ Python¡£
+echo   ÇëÏÈ°²×° Python 3.12£¨https://www.python.org/downloads/ £©£¬
+echo   »òÖ´ÐÐ "pip install uv" ºóÖØÊÔ¡£
 pause
 exit /b 1
 
@@ -30,5 +31,5 @@ set "PYCMD=python"
 :run
 %PYCMD% bootstrap.py %*
 echo.
-echo æµç¨‹ç»“æŸï¼ˆè‹¥ä¸Šæ–¹æœ‰æŠ¥é”™ï¼Œè¯·æŒ‰æç¤ºå¤„ç†åŽé‡è·‘æœ¬è„šæœ¬ï¼Œå·²ä¸‹å¥½çš„æ–‡ä»¶ä¼šè‡ªåŠ¨è·³è¿‡ï¼‰ã€‚
+echo Á÷³Ì½áÊø£¨ÈôÉÏ·½ÓÐ±¨´í£¬Çë°´ÌáÊ¾´¦ÀíºóÖØÅÜ±¾½Å±¾£¬ÒÑÏÂºÃµÄÎÄ¼þ»á×Ô¶¯Ìø¹ý£©¡£
 pause

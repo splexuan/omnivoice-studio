@@ -4,8 +4,8 @@
 # 脚本里一旦有 chcp 65001 + 中文，LF 换行会让偏移错位 ——
 # 表现为「双击闪退且没有任何报错」，极难排查（本项目踩过）。
 #
-# 本机 core.autocrlf=true 时看不出问题，但 clone 方若是 autocrlf=false
-# （Linux/macOS 默认，或 Windows 安装时没勾对），拿到的就是 LF 的 bat。
+# 当 core.autocrlf=true 时这问题看不出来（换行被自动转换），但 clone 方若是
+# autocrlf=false（Linux/macOS 默认，或 Windows 安装时没勾对），拿到的就是 LF 的 bat。
 # 所以在这里显式钉死，不依赖任何人的本地配置。
 *.bat text eol=crlf
 *.cmd text eol=crlf

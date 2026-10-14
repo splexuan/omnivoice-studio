@@ -8,7 +8,7 @@
 <style>
 /* ============================================================
    设计令牌 —— 浅色
-   与 Gradio 版最大的不同：中性色也自持，深浅两套由 data-theme 切换，
+   与早期 Gradio 版最大的不同：中性色也自持，深浅两套由 data-theme 切换，
    不再依赖第三方主题变量（那正是上一版「令牌变了组件没变」的根因）。
    ============================================================ */
 :root{
@@ -303,7 +303,11 @@ details > summary .tagpill{
 .vcard .wpl-head{padding:0; border-bottom:0; margin-bottom:8px}
 .vcard .wpl-wave{height:56px; border-radius:6px}
 
-/* ---------------- 合成记录 ---------------- */
+/* ---------------- 合成记录 ----------------
+   整齐的关键是「每条记录的同类信息落在同一列」：
+   ① 徽章必须左对齐 —— .badge 全局带 margin-left:auto（给 card-head 推计数用的），
+      在这里会与时间的 auto 平分剩余空间，起点随内容长度漂移 → 逐条错开。
+   ② 统计项拆成独立格子 + 定宽 + 等宽数字，拼成一长句会随长度越飘越远。 */
 .h-tools{display:flex; align-items:center; gap:8px; padding:0 16px 14px; flex-wrap:wrap}
 .h-tools .ctl{flex:1; min-width:170px; max-width:320px}
 .h-tools .sp{margin-left:auto}
@@ -314,9 +318,23 @@ details > summary .tagpill{
 }
 .hrow:hover{background:var(--surface-2)}
 .hrow.gone{opacity:.62}
-.hrow-top{display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:12.5px; color:var(--text-3)}
-.hrow-voice{font-weight:600; color:var(--text-2)}
+.hrow-top{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; font-size:12.5px; color:var(--text-3)}
+.hrow-top .badge{margin-left:0; flex:none; align-self:center}
+.hrow-voice{font-weight:600; font-size:13.5px; color:var(--text)}
+.hrow-instr{color:var(--text-3)}
+.hrow-instr::before{content:"·"; margin-right:6px; opacity:.55}
 .hrow-time{margin-left:auto; font-variant-numeric:tabular-nums; white-space:nowrap}
+/* 统计条：每项一格、定宽；缺项时该格不存在，但列宽由 min-width 守住，跨记录仍对齐 */
+.hrow-meta{
+  display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+  font-size:12.5px; color:var(--text-3); font-variant-numeric:tabular-nums;
+}
+.hrow-meta span{white-space:nowrap}
+.hm-mode{min-width:4.4em}
+.hm-lang{min-width:3.4em}
+.hm-dur{min-width:6.6em}
+.hm-cost{min-width:6.6em}
+.hm-rtf{min-width:5.4em}
 .hrow-text{
   margin:0; font-size:13.5px; line-height:1.6; color:var(--text);
   display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
@@ -800,20 +818,18 @@ input[type=checkbox]{width:15px; height:15px; accent-color:var(--accent); cursor
 </template>
 
 <!-- ================= 附加指令模板（仅语音合成） =================
-     这一项是「自由填写」，与前两个页面的属性下拉不是一回事：没有下拉兜着，
-     所以必须把规则写在旁边 —— 否则用户只能靠试错发现哪些值模型才认。 -->
+     与「语音设计」共用同一套属性、同一份取值（都来自 BOOT.categories）。
+     这里同样用下拉而不是自由文本：指令值必须在模型的白名单内，放开文本框
+     只会让人靠试错去发现哪些能写。语义上的差别只有一处 ——
+     设计页是凭空造一个音色，这里是给已经选中的音色做微调。 -->
 <template id="tpl-instruct">
   <details>
     <summary>附加指令<span class="tagpill">可选</span></summary>
     <div class="details-body">
-      <div class="field" style="margin:0">
-        <label for="s-instruct">指令文本</label>
-        <textarea class="ctl" id="s-instruct" rows="2" style="min-height:0"
-                  placeholder="例：男, 河南话　或　female, british accent"></textarea>
-        <p class="hint">可自由填写，多项用逗号分隔；可用的值就是「语音设计」的属性
-          （性别 / 年龄 / 音调 / 耳语 / 英文口音 / 中文方言）。方言与英文口音不能混用，
-          同一类别只能写一项；值写错时模型会提示最接近的写法。</p>
-      </div>
+      <p class="hint" style="margin:0 0 12px">对选中的音色做微调，可自由组合；留「不指定」表示不改动。
+        英文口音只对英文生效，中文方言只对中文生效，两者不能混用。</p>
+      <div class="attrs" id="s-attrs"></div>
+      <div class="preview" id="s-instruct-preview"></div>
     </div>
   </details>
 </template>
@@ -1727,6 +1743,46 @@ async function main() {
   const sSet = buildSettings($("#s-details"), BOOT.profile);
   $("#s-details").insertAdjacentHTML("beforeend", $("#tpl-instruct").innerHTML);
 
+  /* 附加指令：与「语音设计」同一套属性、同一份取值（都是 BOOT.categories），
+     所以两边不会各维护一份清单。做成下拉而不是自由文本 —— 模型只认白名单里的
+     值，文本框只会让人靠试错去发现哪些能写。 */
+  const sAttrSels = [];
+  BOOT.categories.forEach((cat) => {
+    const wrap = document.createElement("div");
+    wrap.className = "field"; wrap.style.margin = "0";
+    const id = "s-attr-" + sAttrSels.length;
+    wrap.innerHTML = `<label for="${id}">${esc(cat.label)}</label>`;
+    const sel = document.createElement("select");
+    sel.className = "ctl"; sel.id = id;
+    sel.innerHTML = cat.choices.map((c) =>
+      `<option value="${esc(c)}">${esc(c === "Auto" ? "不指定" : c)}</option>`).join("");
+    wrap.appendChild(sel);
+    $("#s-attrs").appendChild(wrap);
+    sAttrSels.push(sel);
+    sel.addEventListener("change", updateInstruct);
+  });
+  function instructValue() {
+    return toInstruct(sAttrSels.map((s) => s.value));
+  }
+  function updateInstruct() {
+    const inst = instructValue();
+    $("#s-instruct-preview").innerHTML = inst
+      ? `将发送的指令：<code>${esc(inst)}</code>`
+      : "未选择：按音色原本的声音合成。";
+  }
+  /* 回填：逐选项算一次 toInstruct() 再比对，比反解析字符串可靠 ——
+     记录里存的是规范化后的值（口音是英文、方言是中文），不是下拉的显示值。 */
+  function applyInstruct(str) {
+    const want = (str || "").split(/[,，]/).map((x) => x.trim()).filter(Boolean);
+    sAttrSels.forEach((sel, i) => {
+      const pick = BOOT.categories[i].choices.find(
+        (c) => c !== "Auto" && want.includes(toInstruct([c])));
+      sel.value = pick || "Auto";
+    });
+    updateInstruct();
+  }
+  updateInstruct();
+
   const sCard = $("#s-voice-card");
   const sGo = $("#s-go");
   const sGoHint = $("#s-go-hint");
@@ -1800,7 +1856,7 @@ async function main() {
       language: sLang.value,
       ref_audio: picked.ref_audio,
       voice_name: picked.name,          // 只为了合成记录里说得出用的是谁
-      instruct: $("#s-instruct") ? $("#s-instruct").value : "",
+      instruct: instructValue(),
       num_step: p("num_step"), guidance_scale: p("guidance_scale"),
       denoise: p("denoise"), speed: p("speed"), duration: p("duration"),
       preprocess_prompt: p("preprocess_prompt"),
@@ -2346,12 +2402,17 @@ async function main() {
   function histRow(it) {
     const ok = it.kind === "ok";
     const gone = ok && it.exists === false;              // 记录还在，wav 已被人删掉
-    const bits = [modeName(it.mode)];
-    if (it.language && it.language !== "Auto") bits.push(it.language);
-    if (it.duration) bits.push(`音频 ${it.duration.toFixed(2)}s`);
-    if (it.cost) bits.push(`耗时 ${it.cost.toFixed(1)}s`);
-    if (it.rtf) bits.push(`RTF ${it.rtf}`);
-    if (it.first_load) bits.push("含首次加载模型");
+
+    /* 统计项各占一格（宽度由 .hm-* 定住），跨记录对齐；
+       拼成一整句「· A · B · C」会随各项长度不同越飘越远。 */
+    const meta = [
+      ["mode", modeName(it.mode)],
+      it.language && it.language !== "Auto" ? ["lang", it.language] : null,
+      it.duration ? ["dur", `音频 ${it.duration.toFixed(2)}s`] : null,
+      it.cost ? ["cost", `耗时 ${it.cost.toFixed(1)}s`] : null,
+      it.rtf ? ["rtf", `RTF ${it.rtf}`] : null,
+      it.first_load ? ["note", "含首次加载模型"] : null,
+    ].filter(Boolean);
 
     const row = document.createElement("div");
     row.className = "hrow" + (ok ? "" : " err") + (gone ? " gone" : "");
@@ -2359,9 +2420,11 @@ async function main() {
       `<div class="hrow-top">
          <span class="badge" data-state="${ok ? "done" : "error"}">${ok ? "成功" : "失败"}</span>
          ${it.voice ? `<span class="hrow-voice">${esc(it.voice)}</span>` : ""}
-         ${it.instruct ? `<span>· ${esc(it.instruct)}</span>` : ""}
-         <span>· ${esc(bits.join(" · "))}</span>
+         ${it.instruct ? `<span class="hrow-instr">${esc(it.instruct)}</span>` : ""}
          <span class="hrow-time">${fmtWhen(it.ts)}</span>
+       </div>
+       <div class="hrow-meta">
+         ${meta.map(([k, v]) => `<span class="hm-${k}">${esc(v)}</span>`).join("")}
        </div>
        <p class="hrow-text">${esc(ok ? it.text : (it.message || "生成失败"))}</p>
        <div class="hrow-slot" data-role="slot"></div>
@@ -2417,8 +2480,7 @@ async function main() {
                  : "这条记录没有留下音色，请重新选一个再生成。", "warn");
     }
     $("#s-text").value = it.text || "";
-    const ins = $("#s-instruct");
-    if (ins) ins.value = it.instruct || "";
+    applyInstruct(it.instruct);
     updateGo();
     $("#s-text").focus();
   }

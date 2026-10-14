@@ -25,7 +25,7 @@
 
 命令行直接查看本机档位（排障用）::
 
-    .venv\\Scripts\\python.exe app\\hardware.py
+    runtime\\python.exe app\\hardware.py
 """
 
 from __future__ import annotations

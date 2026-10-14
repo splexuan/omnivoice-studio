@@ -1,39 +1,62 @@
 @echo off
-chcp 65001 >nul
+rem ±¾ÎÄ¼þ±ØÐëÊÇ GBK ±àÂë + CRLF »»ÐÐ£¬ÇÒ¡¾²»Òª chcp 65001¡¿¡ª¡ª
+rem Êµ²â£ºUTF-8 + chcp »áÈÃ cmd °ÑÖÐÎÄÐÐ´Ó°ë½Ø½Ø¶Ï£¬±¨ not recognized¡£
 cd /d "%~dp0"
 
-rem ---- å›½å†…çŽ¯å¢ƒï¼šHuggingFace èµ°é•œåƒï¼ˆä»…å½“éœ€è¦è”ç½‘ä¸‹è½½æ—¶æ‰ç”Ÿæ•ˆï¼‰----
-set "HF_ENDPOINT=https://hf-mirror.com"
-
-set "PY=%~dp0.venv\Scripts\python.exe"
+rem ============================================================
+rem  ÓÅÏÈÓÃÏîÄ¿ÄÚÖÃµÄ±ãÐ¯ÔËÐÐÊ± runtime\ £ºÕûÌ× Python »·¾³¾ÍÔÚ
+rem  ÏîÄ¿Ä¿Â¼Àï£¬²»ÒÀÀµ±¾»ú°²×°µÄ Python£¬ÎÄ¼þ¼Ð¿ÉËæÒâÒÆ¶¯/¸´ÖÆ¡£
+rem  Ã»ÓÐ runtime\ Ê±»ØÍËµ½ .venv\£¨setup.bat ´ÓÁã´î½¨µÄÄÇÌ×£©¡£
+rem ============================================================
+set "PY=%~dp0runtime\python.exe"
+if not exist "%PY%" (
+    if exist "%~dp0.venv\Scripts\python.exe" set "PY=%~dp0.venv\Scripts\python.exe"
+)
 set "ENTRY=%~dp0web\server.py"
 
+rem ---- ¸ôÀëËÞÖ÷»·¾³ ----
+rem  ÇåµôÍâ²¿ PYTHONPATH£¬·ÀÖ¹±ðµÄ Python µÄ°ü´®½øÀ´£»
+rem  ¹Ì¶¨ UTF-8£¬±ÜÃâ»»»úºóÖÐÎÄÊä³öÂÒÂë¡£
+set "PYTHONPATH="
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
+
+rem ---- ¹úÄÚ»·¾³£ºHuggingFace ×ß¾µÏñ£¨½öµ±ÐèÒªÁªÍøÏÂÔØÊ±²ÅÉúÐ§£©----
+set "HF_ENDPOINT=https://hf-mirror.com"
+
 if not exist "%PY%" (
-    echo [é”™è¯¯] æ‰¾ä¸åˆ°è™šæ‹ŸçŽ¯å¢ƒï¼š%PY%
-    echo         è¯·å…ˆåœ¨é¡¹ç›®æ ¹ç›®å½•åˆ›å»º .venv å¹¶å®‰è£…ä¾èµ–ã€‚
+    echo [´íÎó] Ã»ÕÒµ½¿ÉÓÃµÄ Python ÔËÐÐÊ±£¬Á½¸öÎ»ÖÃ¶¼Ã»ÓÐ£º
+    echo         ÄÚÖÃÔËÐÐÊ±£º%~dp0runtime\python.exe
+    echo         ±¸ÓÃ»·¾³¡¡£º%~dp0.venv\Scripts\python.exe
+    echo.
+    echo         Èç¹ûÄÃµ½µÄÊÇ´Ó²Ö¿â¿ËÂ¡µÄ¸±±¾£¨²»º¬ runtime\£©£¬
+    echo         ÇëÏÈÔËÐÐ setup.bat ´î½¨»·¾³¡£
     echo.
     pause
     exit /b 1
 )
 if not exist "%ENTRY%" (
-    echo [é”™è¯¯] æ‰¾ä¸åˆ°å…¥å£æ–‡ä»¶ï¼š%ENTRY%
+    echo [´íÎó] ÕÒ²»µ½Èë¿ÚÎÄ¼þ£º%ENTRY%
     echo.
     pause
     exit /b 1
 )
 
 echo ============================================
-echo   OmniVoice Studio - WebUIï¼ˆFastAPI + è‡ªç ”å‰ç«¯ï¼‰
+echo   OmniVoice Studio - WebUI£¨FastAPI + ×ÔÑÐÇ°¶Ë£©
 echo   http://127.0.0.1:7866
 echo ============================================
 echo.
-echo   ä¸Ž Gradio ç‰ˆï¼ˆrun.batï¼Œç«¯å£ 7865ï¼‰å¯åŒæ—¶è¿è¡Œï¼Œä¾¿äºŽå¯¹æ¯”ã€‚
+echo   ÔËÐÐÊ±£º%PY%
+echo   ½çÃæÖ»ÓÐÕâÒ»Ì×£¨ÔçÆÚ²¢´æµÄ Gradio °æÒÑÒÆ³ý£©¡£
 echo.
 
-"%PY%" "%ENTRY%"
+rem  ¼Ó -W ÊÇÑ¹µô pydub ÄÇÌõ "Couldn't find ffmpeg" µÄ RuntimeWarning£º
+rem  OmniVoice ÓÃ pydub Ö»×öÄÚ´æ×ª»»£¬²»¶ÁÎÄ¼þ£¬ÓÃ²»µ½ ffmpeg£¬ÄÇÌõ¾¯¸æÃ»ÒâÒå¡£
+"%PY%" -s -W ignore::RuntimeWarning:pydub.utils "%ENTRY%"
 set "CODE=%ERRORLEVEL%"
 
 echo.
-if not "%CODE%"=="0" echo [å¼‚å¸¸é€€å‡º] é€€å‡ºç  %CODE%ï¼Œè¯·æŸ¥çœ‹ä¸Šæ–¹é”™è¯¯ä¿¡æ¯ã€‚
-echo æœåŠ¡å·²é€€å‡ºã€‚
+if not "%CODE%"=="0" echo [Òì³£ÍË³ö] ÍË³öÂë %CODE%£¬Çë²é¿´ÉÏ·½´íÎóÐÅÏ¢¡£
+echo ·þÎñÒÑÍË³ö¡£
 pause

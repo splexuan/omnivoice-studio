@@ -4,7 +4,7 @@
 精度选择是否合理，并能识别「明明有 N 卡却用不上」这类驱动与 torch 不匹配的问题。
 
 用法（项目根目录下）：
-    .venv\\Scripts\\python.exe app\\verify_env.py
+    runtime\\python.exe app\\verify_env.py
 """
 
 import sys

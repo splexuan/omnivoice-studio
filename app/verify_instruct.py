@@ -8,7 +8,7 @@
 少一项就等于「模型支持但界面选不到」，只能靠手写指令绕过去。
 
 用法：
-    .venv\\Scripts\\python.exe app\\verify_instruct.py
+    runtime\\python.exe app\\verify_instruct.py
 """
 import sys
 from pathlib import Path

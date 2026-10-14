@@ -44,6 +44,8 @@ SENSEVOICE_REPO = "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17
 SENSEVOICE_FILES = ("model.int8.onnx", "tokens.txt")
 DEFAULT_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
 DEFAULT_HF = "https://hf-mirror.com"
+# 注：gradio 是 OmniVoice 官方的依赖（它自带一套 UI），本项目界面已不用它，
+# 但它写在 omnivoice 的依赖声明里，装 omnivoice 时照样会被拉进来，故保留在此。
 DEPS = ["transformers>=5.3.0", "accelerate", "pydub", "gradio", "tensorboardX",
         "webdataset", "soundfile", "librosa", "num2words",
         # 参考音频转写：SenseVoice Small（见 app/asr.py），项目唯一的转写引擎
@@ -210,7 +212,7 @@ def step_verify(vpy: Path) -> None:
     log("6/6 环境自检")
     run([str(vpy), str(ROOT / "app" / "verify_env.py")])
     print("\n下一步：")
-    print(f"  启动界面  : {vpy} app\\app.py      （或双击 run.bat）")
+    print(f"  启动界面  : {vpy} web\\server.py    （或双击 run_web.bat）")
     print(f"  冒烟自测  : {vpy} app\\smoke_test.py")
     print(f"  看档位    : {vpy} app\\hardware.py")
 
