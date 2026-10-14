@@ -9,7 +9,7 @@
       checkpoints/    模型权重（OmniVoice 主模型 + SenseVoice 转写）  约 3.3 G
       OmniVoice/      官方源码（靠 runtime 里的相对 .pth 指过来）
       app/            生成核心（config / asr / hardware / app）
-      web/            界面：server.py + static/index.html
+      web/            界面：server.py + api_docs.py + static/index.html
       run_web.bat     启动入口
       voices/         音色库（加 --no-voices 可去掉，做成"干净出厂"）
   不带 wheels/         3.3 G 的 torch 下载缓存 —— runtime 里已经装好 torch，带上纯属白送
@@ -144,7 +144,8 @@ def verify(bundle: Path) -> bool:
         return False
 
     missing = [str(p.relative_to(bundle)) for p in
-               (bundle / "web" / "server.py", bundle / "web" / "static" / "index.html",
+               (bundle / "web" / "server.py", bundle / "web" / "api_docs.py",
+                bundle / "web" / "static" / "index.html",
                 bundle / "app" / "app.py", bundle / "OmniVoice" / "omnivoice" / "__init__.py")
                if not p.exists()]
     if missing:

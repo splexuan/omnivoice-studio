@@ -6,7 +6,7 @@ const { chromium } = require('playwright-core');
 const path = require('path');
 
 const OUT = process.argv[2] || '.';
-const BASE = 'http://127.0.0.1:7866/';
+const BASE = 'http://127.0.0.1:7866/index-v2.html';
 const VW = 1440, VH = 900;
 
 const rgb = (s) => s; // 原样返回，便于人读

@@ -9,7 +9,9 @@
 分工：
   · 模型调用与音色库读写 —— 直接复用 app/app.py 的**模块级函数**，不重复实现
     （load_model / synthesize / list_voices / load_voice_meta / _to_instruct …）
-  · 界面与交互 —— 全部由 web/static/index.html 自持
+  · 界面与交互 —— 全部由 web/static/index.html 自持（正式版；旧版设计存档在
+    web/static/index-v2.html，不再演进）
+  · 接口文档 —— 内容在 web/api_docs.py，本文件只把它挂成 GET /api/docs
 本文件不修改 app/app.py（它现在只剩生成核心，不含任何界面代码）。
 
 接口：
@@ -27,6 +29,8 @@
     POST /api/history/delete               删除指定记录（不动 outputs/ 里的 wav）
     POST /api/history/clear                清空全部记录
     GET  /media/{out|upload|voice}/{name}  音频回放
+    GET  /api/docs                         接口清单（与真实路由对账后的结果）
+    GET  /openapi.json                     FastAPI 自动生成的机器可读规格
 
 启动：
     runtime\\python.exe web\\server.py
@@ -47,11 +51,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "app"))
 
+import api_docs as api_docs_mod  # noqa: E402  —— 接口文档的唯一来源（纯数据，无副作用）
 import config  # noqa: E402
 import app as core  # noqa: E402  —— 复用现有生成逻辑（import 不会加载模型）
 
 import soundfile as sf  # noqa: E402
-from fastapi import FastAPI, File, HTTPException, UploadFile  # noqa: E402
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile  # noqa: E402
 from fastapi.responses import FileResponse, JSONResponse  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 
@@ -132,6 +137,12 @@ def _hist_entry(p: dict, kind: str, message: str = "", **extra) -> dict:
         "guidance_scale": p.get("guidance_scale"),
         "speed": p.get("speed"),
         "chunk_duration": p.get("chunk_duration"),
+        # 三个开关也一并记下：界面上的「生成参数」要把这次合成完整摊开，
+        # 少了这几项就无法回答「当时到底开没开降噪 / 后处理」。
+        # （老记录里没有这几个键，前端按缺失跳过，不会显示成「关」。）
+        "denoise": p.get("denoise"),
+        "preprocess_prompt": p.get("preprocess_prompt"),
+        "postprocess_output": p.get("postprocess_output"),
         "message": message,
         **extra,
     }
@@ -301,6 +312,22 @@ def _readable(src: str | None) -> Path:
     return p
 
 
+def _voice_or_404(name: str) -> dict:
+    """取音色的元信息；名字里带路径分隔符的**一律当成不存在**。
+
+    `{name}` 是 URL 路径段，`%2e%2e%2f` 解出来就是 `../` —— 少了这一层，
+    `config.VOICES_DIR / f"{name}.json"` 会被带出 voices/ 目录。名字本身由
+    `core.sanitize_voice_name()` 在创建时就净化过，这里是第二道闸：老数据、
+    或者别人直接打接口，都拦得住。
+    """
+    if "/" in name or "\\" in name or name in (".", ".."):
+        raise HTTPException(404, f"音色「{name}」不存在。")
+    meta = core.load_voice_meta(name)
+    if not meta:
+        raise HTTPException(404, f"音色「{name}」不存在。")
+    return meta
+
+
 def _trim_arg(payload: dict) -> tuple[float, float] | None:
     """解析选区，返回 (起点秒, 终点秒)；缺省或非法则为 None（表示「不裁剪」）。
 
@@ -341,21 +368,35 @@ def transcribe(payload: dict):
             "duration": round(len(wave) / max(sr, 1), 2)}
 
 
-@app.post("/api/voices")
-def save_voice(payload: dict):
-    """把一份参考音频存成音色：先按需裁剪，再落盘音频与参考文本。
+# 参考音频可能落盘的扩展名。换格式时要按这个集合清掉旧文件。
+_AUDIO_SUFFIXES = {".wav", ".mp3", ".flac", ".m4a", ".ogg", ".opus", ".aac", ".wma"}
 
-    这一版刻意做成**同步**的：裁剪在内存里完成、转写是亚秒级，两者加起来一两秒，
-    换来「点保存 = 音频和转写都已经就位」这个明确结果 —— 不必再去别的页面补一步。
-    （只有建 prompt 缓存仍留在后台，因为那需要 2.3 GB 的主模型已加载。）
+
+def _name_note(typed: str, final: str) -> str:
+    """名字被改动过就说明原因（净化 / 去重），没改就返回空串。
+
+    界面直接显示这句话。不写死在界面里：是否被改只有后端知道，前端只能靠猜。
     """
-    disp = (payload.get("name") or "").strip()
-    if not disp:
-        raise HTTPException(400, "请填写音色名称。")
-    srcp = _readable(payload.get("path"))
-    trim = _trim_arg(payload)
+    clean = core.sanitize_voice_name(typed)
+    parts = []
+    if clean != typed.strip():
+        parts.append("名称里的空格与特殊字符已替换为下划线")
+    if final != clean:
+        parts.append("已有同名音色，自动加了序号")
+    return "；".join(parts)
 
-    stem = core._unique_name(disp)
+
+def _place_reference(stem: str, srcp: Path, trim, typed_text: str = "",
+                     previous_meta: dict | None = None) -> dict:
+    """把参考音频落到 ``voices/<stem>.*``，定下参考文本，写 json 并重建音色缓存。
+
+    「新建音色」与「重新上传音频」共用这一段。**必须共用**：落盘方式、缓存失效
+    口径、参考文本的来源判定，只要两条路径各写一遍，换个入口进来行为就会不一样。
+
+    没裁剪就原样搬文件（省一次无谓的重编码）；裁过就编码成 wav。
+    参考文本按 手填 → 转写 → **保留旧值** 的顺序定：
+    把旧文本抹掉比留着更糟 —— 音色会变成「没有参考文本」，得靠人重新来一遍。
+    """
     wave = sr = None
     if trim:
         try:
@@ -371,21 +412,63 @@ def save_voice(payload: dict):
         shutil.copyfile(srcp, dst)                      # 没裁剪就别重编码，原样搬
         duration = core.audio_duration(dst)
 
-    text = (payload.get("ref_text") or "").strip()
-    if text:
-        source = "手填"
-    elif wave is not None:
-        text, source = core.transcribe_audio(wave, sr)
-    else:
-        text, source = core._transcribe_ref(str(dst))
+    # 换了格式（wav ↔ mp3）时旧文件要清掉，否则 voices/ 里会留下一个没人引用的音频，
+    # 而它还会被 /api/voices 的时长统计读到。
+    # 刻意用 iterdir + stem 精确比对而不是 glob(f"{stem}.*")：音色名里合法地可以含
+    # `[` `]`，那种名字进 glob 会变成字符类，模式会匹配到**别的音色**的文件。
+    for old in config.VOICES_DIR.iterdir():
+        if old.is_file() and old.stem == stem and old.suffix.lower() in _AUDIO_SUFFIXES \
+                and old.resolve() != dst.resolve():
+            old.unlink(missing_ok=True)
 
+    previous = (previous_meta or {}).get("ref_text") or ""
+    text = (typed_text or "").strip()
+    source = "手填" if text else None
+    failure = None
+    if not text:
+        if wave is not None:
+            text, source = core.transcribe_audio(wave, sr)
+        else:
+            text, source = core._transcribe_ref(str(dst))
+        if not text:
+            failure = source                      # 例如「SenseVoice 无结果」，用来解释为什么没换文本
+    kept_old = not text and bool(previous)
+    if kept_old:
+        text = previous
+
+    # 音频换过了，旧 prompt 存的还是旧音频编码出的 token，留着只会让下次生成用错声音。
+    # 缓存指纹本来也会因 size/mtime 变化而失效，这里显式作废是为了不去读它。
+    core._voice_prompt_file(stem).unlink(missing_ok=True)
+    meta = {k: v for k, v in (previous_meta or {}).items() if k != "prompt_cache"}
+    meta.update({"name": stem, "ref_audio": str(dst), "ref_text": text})
     (config.VOICES_DIR / f"{stem}.json").write_text(
-        json.dumps({"name": stem, "ref_audio": str(dst), "ref_text": text},
-                   ensure_ascii=False, indent=2), encoding="utf-8")
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    # 模型已加载时后台把 prompt 建好，首次生成即命中缓存；未加载则留给首次生成
-    note = core.warm_voice_prompt(stem)
+    # 模型已加载时顺手把 prompt 建好，首次生成即命中缓存；未加载则留给首次生成
+    return {"audio": str(dst), "duration": duration, "ref_text": text, "source": source,
+            "failure": failure, "kept_old": kept_old, "note": core.warm_voice_prompt(stem)}
 
+
+@app.post("/api/voices")
+def save_voice(payload: dict):
+    """把一份参考音频存成音色：先按需裁剪，再落盘音频与参考文本。
+
+    这一版刻意做成**同步**的：裁剪在内存里完成、转写是亚秒级，两者加起来一两秒，
+    换来「点保存 = 音频和转写都已经就位」这个明确结果 —— 不必再去别的页面补一步。
+    （只有建 prompt 缓存仍留在后台，因为那需要 2.3 GB 的主模型已加载。）
+    """
+    disp = (payload.get("name") or "").strip()
+    if not disp:
+        raise HTTPException(400, "请填写音色名称。")
+    srcp = _readable(payload.get("path"))
+    trim = _trim_arg(payload)
+
+    # 名字会经 sanitize_voice_name 收敛（它同时是文件名），还可能因重名加序号 ——
+    # 两件事都要如实告诉用户，否则他会发现「我打的字怎么变了」。
+    stem = core._unique_name(disp)
+    placed = _place_reference(stem, srcp, trim, payload.get("ref_text") or "")
+
+    duration, text, source = placed["duration"], placed["ref_text"], placed["source"]
     # 转写没成功也照样把音色留下：音频是好的，缺的只是一段文本，
     # 事后可以在音色库里手填或重新转写。整条回滚反而把用户的上传白费掉。
     if text:
@@ -394,15 +477,58 @@ def save_voice(payload: dict):
         level = "ok"
     else:
         reason = (core.asr.unavailable_reason() if not core.asr.enabled()
-                  else (source or "没转出内容"))
+                  else (placed["failure"] or "没转出内容"))
         msg = (f"已保存音色「{stem}」（{duration:.2f}s），但没能自动转写参考文本："
                f"{reason}。可在列表里选中它，手填或点「重新转写」。")
         level = "warn"
 
-    return {"name": stem, "renamed": stem != disp, "note": note,
+    return {"name": stem, "renamed": stem != disp, "name_note": _name_note(disp, stem),
+            "note": placed["note"],
             "ref_text": text, "text_source": source,
             "duration": round(duration, 2),
             "message": msg, "level": level,
+            "voices": _voices_payload()}
+
+
+@app.post("/api/voices/{name}/audio")
+def replace_voice_audio(name: str, payload: dict):
+    """就地换掉某个音色的参考音频 —— 界面上的「重新上传音频」。
+
+    为什么不复用 ``POST /api/voices``：那条路会走 `_unique_name` 去重，对「新建」
+    是对的，对「替换」就错了 —— 它会另起一个新音色，而不是覆盖原来那个。
+    所以单开一条，语义写死在路由里：**名字必须已存在，音频就地替换**。
+
+    代价是原音频与旧 prompt 缓存一并作废（不可撤销），界面上有明确告警。
+    """
+    meta = _voice_or_404(name)
+    srcp = _readable(payload.get("path"))
+    trim = _trim_arg(payload)
+
+    placed = _place_reference(name, srcp, trim, payload.get("ref_text") or "",
+                              previous_meta=meta)
+    duration, text, source = placed["duration"], placed["ref_text"], placed["source"]
+    tail = "原音频与旧缓存已作废。" + (placed["note"] or "")
+
+    if placed["kept_old"]:
+        reason = (core.asr.unavailable_reason() if not core.asr.enabled()
+                  else (placed["failure"] or "没转出内容"))
+        msg = (f"已替换「{name}」的参考音频（{duration:.2f}s）。新音频没能自动转写："
+               f"{reason} —— 参考文本仍沿用替换前那段，建议核对后手填或点「重新转写」。")
+        level = "warn"
+    elif text:
+        msg = (f"已替换「{name}」的参考音频（{duration:.2f}s）。"
+               + ("参考文本已按你填写的内容更新。" if source == "手填"
+                  else f"参考文本已用 {source} 重新转写。"))
+        level = "ok"
+    else:
+        reason = (core.asr.unavailable_reason() if not core.asr.enabled()
+                  else (placed["failure"] or "没转出内容"))
+        msg = (f"已替换「{name}」的参考音频（{duration:.2f}s），但没能转出参考文本："
+               f"{reason}。请在右侧手填，或点「重新转写」。")
+        level = "warn"
+
+    return {"name": name, "duration": round(duration, 2), "ref_text": text,
+            "text_source": source, "message": f"{msg}{tail}", "level": level,
             "voices": _voices_payload()}
 
 
@@ -414,9 +540,7 @@ def trim_voice(name: str, payload: dict):
     音频被换掉后，旧 prompt 缓存必然失效 —— 它保存的是旧音频编码出的
     ref_audio_tokens，留着只会让下次生成用错声音。
     """
-    meta = core.load_voice_meta(name)
-    if not meta:
-        raise HTTPException(404, f"音色「{name}」不存在。")
+    meta = _voice_or_404(name)
     src = meta.get("ref_audio")
     if not src or not Path(src).exists():
         raise HTTPException(400, "这个音色没有可用的参考音频文件。")
@@ -480,9 +604,7 @@ def trim_voice(name: str, payload: dict):
 
 @app.post("/api/voices/{name}/rename")
 def rename_voice(name: str, payload: dict):
-    meta = core.load_voice_meta(name)
-    if not meta:
-        raise HTTPException(404, f"音色「{name}」不存在。")
+    meta = _voice_or_404(name)
     new = (payload.get("to") or "").strip()
     if not new:
         raise HTTPException(400, "请输入新的音色名称。")
@@ -496,16 +618,19 @@ def rename_voice(name: str, payload: dict):
         moved = config.VOICES_DIR / f"{stem}{src.suffix or '.wav'}"
         src.replace(moved)
     (config.VOICES_DIR / f"{name}.json").unlink(missing_ok=True)
+    # `prompt_cache` 必须跟着搬：指纹看的是源音频的 size/mtime（刻意不含文件名），
+    # 而 replace() 保留这两项 —— 所以改名后缓存依然有效。曾经这里只写回
+    # name/ref_audio/ref_text，把指纹丢掉了，于是「注释说缓存不受影响、实际每次都重建」。
+    new_meta = {k: v for k, v in meta.items() if k != "name"}
+    new_meta.update({"name": stem, "ref_audio": str(moved) if moved else ""})
     (config.VOICES_DIR / f"{stem}.json").write_text(
-        json.dumps({"name": stem, "ref_audio": str(moved) if moved else "",
-                    "ref_text": meta.get("ref_text", "")},
-                   ensure_ascii=False, indent=2),
-        encoding="utf-8")
-    # prompt 缓存的指纹只看 size/mtime，改名不影响有效性，跟着搬过去即可
+        json.dumps(new_meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    # prompt 缓存文件本身也跟着搬
     old_pt = core._voice_prompt_file(name)
     if old_pt.exists():
         old_pt.replace(core._voice_prompt_file(stem))
-    return {"name": stem, "renamed": stem != new, "voices": _voices_payload()}
+    return {"name": stem, "renamed": stem != new, "name_note": _name_note(new, stem),
+            "voices": _voices_payload()}
 
 
 @app.post("/api/voices/{name}/retranscribe")
@@ -515,6 +640,7 @@ def retranscribe_voice(name: str):
     用的是 core.retranscribe_voice()：音色的参考文本过期时能就地刷新，
     不必删掉音色再重存一遍（历史版本用 Whisper 转出的是无标点文本）。
     """
+    _voice_or_404(name)
     msg, level = core.retranscribe_voice(name)
     if level == "error":
         raise HTTPException(400, msg)
@@ -528,6 +654,9 @@ def delete_voices(payload: dict):
         raise HTTPException(400, "请先选择要删除的音色。")
     removed, failed = [], []
     for n in names:
+        if "/" in n or "\\" in n or n in (".", ".."):
+            failed.append({"name": n, "error": "名称非法，已跳过。"})
+            continue
         meta = core.load_voice_meta(n) or {}
         errs = []
         for target in (meta.get("ref_audio"), config.VOICES_DIR / f"{n}.json",
@@ -698,6 +827,19 @@ def _send(base: Path, name: str) -> FileResponse:
         raise HTTPException(404, "文件不存在。")
     return FileResponse(str(p), media_type=AUDIO_MIME.get(p.suffix.lower(),
                                                           "application/octet-stream"))
+
+
+# ---------------------------------------------------------------------------
+# 接口文档
+# ---------------------------------------------------------------------------
+@app.get("/api/docs")
+def api_docs(request: Request):
+    """给「API 对接」页用的接口清单。
+
+    内容全在 web/api_docs.py，这里只负责把**当前真实的服务地址**传进去
+    （换端口 / 换 host 都不用改文档），以及把 app 交出去做「文档 vs 代码」核对。
+    """
+    return api_docs_mod.build_spec(app, str(request.base_url).rstrip("/"))
 
 
 # ---------------------------------------------------------------------------

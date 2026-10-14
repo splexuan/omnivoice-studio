@@ -10,7 +10,7 @@ const { chromium } = require('playwright-core');
 const OUT = process.argv[2] || '.';
 const PORT = process.argv[3] || '7867';
 const SEED = Number(process.argv[4] || 2);
-const BASE = `http://127.0.0.1:${PORT}/`;
+const BASE = `http://127.0.0.1:${PORT}/index-v2.html`;
 const log = (...a) => console.log(...a);
 
 /* 波形是否真的画出来了：canvas 里有没有上色的像素 */

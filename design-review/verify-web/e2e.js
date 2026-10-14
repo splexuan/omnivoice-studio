@@ -16,7 +16,7 @@ const OUT = process.argv[2] || '.';
     window.addEventListener('unhandledrejection', (e) => window.__rej.push(String(e.reason)));
   });
 
-  await p.goto('http://127.0.0.1:7866/', { waitUntil: 'load' });
+  await p.goto('http://127.0.0.1:7866/index-v2.html', { waitUntil: 'load' });
   await p.waitForFunction(() => document.querySelector('#c-go'), null, { timeout: 20000 });
   await p.waitForTimeout(800);
 

@@ -2,7 +2,7 @@ const { chromium } = require('playwright-core');
 (async () => {
   const b = await chromium.launch({ headless: true });
   const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
-  await p.goto('http://127.0.0.1:7866/', { waitUntil: 'load' });
+  await p.goto('http://127.0.0.1:7866/index-v2.html', { waitUntil: 'load' });
   await p.waitForFunction(() => document.querySelector('#c-go'), { timeout: 20000 });
   await p.waitForTimeout(700);
   const r = await p.evaluate(() => {

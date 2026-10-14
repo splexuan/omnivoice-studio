@@ -204,8 +204,29 @@ def _voice_rows() -> list[list[str]]:
     return [[n, (load_voice_meta(n) or {}).get("ref_text", "")] for n in list_voices()]
 
 
+# 音色名**同时就是文件名**（voices/<name>.json / .wav / .pt），所以它必须是个安全的
+# 文件主干。这一点在「新建音色默认用上传文件名」之后变得更要紧 —— 音色名开始直接
+# 来自用户的文件名，而那可以包含任意字符，包括 `../`。
+_NAME_BAD = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_NAME_MAX = 60
+
+
+def sanitize_voice_name(base: str) -> str:
+    """把用户给的名字（或上传文件名）收敛成安全的文件主干。
+
+    规则：路径分隔符与 Windows 非法字符 → 下划线；连续空白并成一个；去掉首尾的
+    点与空格（Windows 会静默吃掉结尾的点/空格，留着会让「显示名 ≠ 实际文件名」）；
+    超长截断。结果为空则兜底 "voice"。**中文照常保留** —— 音色名本来就多是中文。
+    """
+    name = _NAME_BAD.sub("_", (base or "").strip())
+    name = re.sub(r"\s+", " ", name).strip(". ")
+    if len(name) > _NAME_MAX:
+        name = name[:_NAME_MAX].strip(". ")
+    return name or "voice"
+
+
 def _unique_name(base: str) -> str:
-    base = base.strip() or "voice"
+    base = sanitize_voice_name(base)
     name, i = base, 1
     while (config.VOICES_DIR / f"{name}.json").exists():
         i += 1

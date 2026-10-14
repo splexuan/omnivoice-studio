@@ -13,7 +13,7 @@ const path = require('path');
 
 const OUT = process.argv[2] || '.';
 const PORT = process.argv[3] || '7866';
-const BASE = `http://127.0.0.1:${PORT}/`;
+const BASE = `http://127.0.0.1:${PORT}/index-v2.html`;
 const log = (...a) => console.log(...a);
 
 (async () => {

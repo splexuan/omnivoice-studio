@@ -87,8 +87,10 @@ omnivoice-studio/
 │   └── verify_env.py   环境自检 + 打印本机档位
 ├── web/                自研 WebUI（run_web.bat，端口 7866）
 │   ├── server.py       FastAPI 后端（只调 app/app.py 的模块级函数）
+│   ├── api_docs.py     接口文档的唯一来源（`GET /api/docs` 用它，并与真实路由对账）
 │   ├── static/
-│   │   └── index.html  单文件前端（语音合成 / 语音设计 / 音色库 / 合成记录）
+│   │   ├── index.html     单文件前端 = 正式版（语音合成 / 语音设计 / 音色库 / 合成记录 / API 对接）
+│   │   └── index-v2.html  旧版设计存档，仅作对照与回滚（新功能不要写这里）
 │   └── _uploads/       界面上的临时上传（不入库）
 ├── bootstrap.py        一键环境引导（自动识别显卡选 torch）
 ├── setup.bat           bootstrap 的 Windows 入口
